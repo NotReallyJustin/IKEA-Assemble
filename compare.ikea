@@ -1,0 +1,24 @@
+.text
+
+ADDRESS X0, donut           # Fetch the address of donut and put it in X0
+ADDRESS X1, jumbo           # Fetch the address of jumbo and put it in X1
+
+LOAD X2, X0, 0              # Loads in donut from memory
+LOAD X3, X1, 0              # Loads in jumbo from memory
+
+SUB X4, X3, X2              # X4 = X3 - X2
+BRANCH_IF_ZERO X4, _amogus          # If X4 is zero, jump to _amogus
+
+STORE X4, X0, 0             # Stores X3 - X2 into donut from memory if they're not equal (difference isn't 0)
+BRANCH _end                 # Jumps to the end
+
+_amogus:
+ADD X5, X3, X2              # X5 = X3 + X2
+STORE X5, X0, 0             # Stores X3 + X3 into donut from memory if they're equal
+
+_end:
+SET X6, 8                   # Set X6 to 8
+
+.data
+donut: 5
+jumbo: 5
