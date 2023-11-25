@@ -1,0 +1,1 @@
+python .\ikeaAssemble.py -f .\compare.ikea -a ./RAM.txt -o ./ROM.txt
