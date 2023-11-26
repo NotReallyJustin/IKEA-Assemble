@@ -14,10 +14,10 @@ BRANCH _end                 # Jumps to the end
 
 _amogus:
 ADD X5, X3, X2              # X5 = X3 + X2
-STORE X5, X0, 0             # Stores X3 + X3 into donut from memory if they're equal
+STORE X5, X0, 0             # Stores X3 + X2 into donut from memory if they're equal
 
 _end:
-SET X6, 8                   # Set X6 to 8
+SETIMM X6, 8                   # Set X6 to 8
 
 .data
 donut: 5

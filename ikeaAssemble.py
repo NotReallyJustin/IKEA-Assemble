@@ -16,15 +16,15 @@ INSTRUCTION_CODES = {
     "SUB_SETFLAG": "1000100000000000010000000001000000000000",
     "AND": "0000100000000000001000000000100000000000",
     "OR": "0000100000000000000100000000010000000000",
-    "LOAD": "0100010000000000100000000000001000000000",
+    "LOAD": "0110010000000000100000000000001000000000",
     "STORE": "0101000001000000100000000000000100000000",
     "ADDRESS": "0100100000000000000001000000000000000001",
     "SET": "0000100000000000000001000000000010000000",
-    "SET::IMM": "0100100000000000000001000000000001000000",              # Immediate number version of SET
+    "SETIMM": "0100100000000000000001000000000001000000",              # Immediate number version of SET
     "BRANCH": "0100000100000000000010000000000000100000",
-    "BRANCH_LINK": "0100000100000000000010000000000000010000",
+    "BRANCH_LINK": "0100000100100000000010000000000000010000",
     "BRANCH_IF_ZERO": "0100001000000000000000100000000000001000",
-    "BRANCH_IF_NOT_ZERO": "0100001000000000000000100000000000000100",
+    "BRANCH_IF_NOT_ZERO": "0100001000000000000000010000000000000100",
     "RETURN": "0000000010000000000001000000000000000010"
 }
 
@@ -46,7 +46,7 @@ CAT3 = [
     "ADDRESS"
 ]
 
-# Category 4 follows RR1, RR2, offset (8 bit imm)
+# Category 4 follows RR2, RR1, offset (8 bit imm)
 CAT4 = [
     "STORE"
 ]
@@ -58,13 +58,12 @@ CAT5 = [
 
 # Category 6 follows WR, 8 bit imm
 CAT6 = [
-    "SET::IMM"
+    "SETIMM"
 ]
 
 # Category 7 follows [label]
 CAT7 = [
     "BRANCH",
-    "BRANCH_LINK"
 ]
 
 # Category 8 follows RR1, label
@@ -76,6 +75,11 @@ CAT8 = [
 # Category 9 is just RETURN
 CAT9 = [
     "RETURN"
+]
+
+# Category 10 is BRANCH_LINK, which has [label]
+CAT10 = [
+    "BRANCH_LINK"
 ]
 
 # ---------------------- HELPER FUNCTIONS ------------------------------
@@ -129,6 +133,14 @@ def convert_1_byte_hex(item:str) -> str:
         num_2_parse += 2 ** 8
     
     return format(num_2_parse,'02x')
+
+def convert_8_byte_hex(binary:str) -> str:
+    '''
+    Convert a 8 byte binary into hexadecimal
+    @param binary The binary to convert
+    @returns Hexadecimal
+    '''
+    return format(int(binary, 2), '016x')
 
 def check_file_syntax(fileArr: list[str]):
     '''
@@ -221,7 +233,7 @@ class RAMROM_dict:
         # byte_size - 1 because indexing is dumb
         # The second argument in range is -1 because we want to take into account 0
         for i in range(byte_size - 1, -1, -1):
-            self.image_file[current_key][current_idx + i] = to_write[HEX_IN_BYTE * i : HEX_IN_BYTE * i + HEX_IN_BYTE]
+            self.image_file[current_key][current_idx + (byte_size - 1 - i)] = to_write[HEX_IN_BYTE * i : HEX_IN_BYTE * i + HEX_IN_BYTE]
 
         memory_address = f"{current_key[0]}{convert_nibble_hex(str(current_idx))}"
 
@@ -230,6 +242,25 @@ class RAMROM_dict:
         # Returns the address as a binary. It is currently in hex
         return format(int(memory_address, 16), '08b')
     
+    def calculate_offset(self, other_memory_addr:str) -> str:
+        '''
+        Calculates the memory offset between $other_memory_addr and the current memory address, and returns the result in binary form
+        This offset is relative. Negative means to move up the file, and positive means to move down the file.
+        @param other_memory_addr Memory address to calculate deviation from
+        @returns A signed 8-bit binary representing the offset
+        '''
+
+        # First, let's get the current memory address
+        current_key, current_idx = self.current_loc
+        memory_address_hex = f"{current_key[0]}{convert_nibble_hex(str(current_idx))}"
+        
+        # Now, let's find the difference between other memory address (base 2) and the current mem hex (base 16)
+        # We take the modulus of 2^8 to get rid of any overflow (because we don't want to deal with them)
+        diff = (int(other_memory_addr, 2) - int(memory_address_hex, 16)) % (2 ** 8)
+
+        # Return the difference as an 8 bit binary
+        return format(diff, "08b")
+
     def mem_addr_preview(self, instruction_num:int) -> str:
         '''
         This is used to "pre-scan" the file for label locations. This only works for ROM.
@@ -275,7 +306,8 @@ def generate_label_lookup(instructions:list[str], rom_dict:RAMROM_dict) -> dict:
 
         # If there is a match, add its predicted memory slot to the dictionary
         if re_search_result:
-            label_lookup[re_search_result.group()] = rom_dict.mem_addr_preview(i)
+            label_name = re_search_result.group().replace(":", "")      # We don't want colons in our label lookup
+            label_lookup[label_name] = rom_dict.mem_addr_preview(i)
     
     return label_lookup
 
@@ -307,7 +339,7 @@ def generate_image_files(fileArr:list[str], ram_file_path:str, rom_file_path:str
 
     label_lookup = generate_label_lookup(instructions, rom)
     for instruction in instructions:
-        generate_binary(rom, label_lookup, instruction)
+        generate_binary(rom, label_lookup, memory_lookup, instruction)
 
     # Step 4) Generate the two image files
     ram.generate_image_file(ram_file_path)
@@ -332,14 +364,16 @@ def generate_memory(memory_dict:RAMROM_dict, memory_lookup:dict, current_mem_ins
     # Then, we update the lookup table (RAM)
     memory_lookup[label] = mem_addr
     
-def generate_binary(instruction_dict:RAMROM_dict, label_lookup:dict, instruction:str) -> str:
+def generate_binary(instruction_dict:RAMROM_dict, label_lookup:dict, memory_lookup:dict, instruction:str):
     '''
     Given a string containing IKEA instructions, convert that to binary
-    This will write to the lookup table (ROM)
+    This will write to the instruction dictionary (ROM)
+    @precondition label_lookup is filled
+    @precondition memory_lookup is filled
     @param instruction_dict The "image file" to write binary instructions to
     @param label_lookup Dictionary of labels (and their addresses) that we already preprocessed so we can use them later
+    @param memory_lookup Dictionary of memory tags (and their addresses)
     @param instruction The instruction to convert
-    @returns Binary codes of the instruction string
     '''
     EIGHT_ZEROES = "00000000"                   # Constant for a byte full of zeroes
 
@@ -352,25 +386,36 @@ def generate_binary(instruction_dict:RAMROM_dict, label_lookup:dict, instruction
 
     # If possible, convert the parameters to binary so machine code can use them. We'll take care of edge cases later
     for i in range(len(instruction_params)):    
-        if isinstance(instruction_params[i], int):
-            instruction_params[i] = convert_8_bit_bin(instruction_dict[i])
+        try:
+            instruction_params[i] = convert_8_bit_bin(instruction_params[i])
+        except:
+            continue
 
     opcode = INSTRUCTION_CODES[command]
+    binary_instruction = ""
 
     if command in CAT1 or command in CAT2:
-        return f"{opcode}{instruction_params[2]}{instruction_params[1]}{instruction_params[0]}"
+        binary_instruction = f"{opcode}{instruction_params[2]}{instruction_params[1]}{instruction_params[0]}"
     elif command in CAT3:
-        return          # Implement after the data image is handled
+        binary_instruction = f"{opcode}{memory_lookup[instruction_params[1]]}{EIGHT_ZEROES}{instruction_params[0]}"
     elif command in CAT4:
-        return f"{opcode}{instruction_params[2]}{instruction_params[0]}{instruction_params[1]}"
+        binary_instruction = f"{opcode}{instruction_params[2]}{instruction_params[1]}{instruction_params[0]}"
     elif command in CAT5 or command in CAT6:
-        return f"{opcode}{instruction_params[1]}{EIGHT_ZEROES}{instruction_params[0]}"
+        binary_instruction = f"{opcode}{instruction_params[1]}{EIGHT_ZEROES}{instruction_params[0]}"
     elif command in CAT7:
-        return
+        offset = instruction_dict.calculate_offset(label_lookup[instruction_params[0]])
+        binary_instruction = f"{opcode}{offset}{EIGHT_ZEROES}{EIGHT_ZEROES}"
     elif command in CAT8:
-        return
+        offset = instruction_dict.calculate_offset(label_lookup[instruction_params[1]])
+        binary_instruction = f"{opcode}{offset}{instruction_params[0]}{EIGHT_ZEROES}"
     elif command in CAT9:
-        return f"{opcode}{convert_8_bit_bin('X30')}{EIGHT_ZEROES}{EIGHT_ZEROES}"
+        binary_instruction = f"{opcode}{convert_8_bit_bin('X30')}{EIGHT_ZEROES}{EIGHT_ZEROES}"
+    elif command in CAT10:
+        offset = instruction_dict.calculate_offset(label_lookup[instruction_params[0]])
+        binary_instruction = f"{opcode}{offset}{EIGHT_ZEROES}{convert_8_bit_bin('X30')}"
+
+    print(binary_instruction)
+    instruction_dict.write_bytes(convert_8_byte_hex(binary_instruction))
 
 # ------------------------- PARSE INPUTS --------------------------
 def merge_labels(instructions:list[str]) -> list[str]:
