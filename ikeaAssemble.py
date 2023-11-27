@@ -1,5 +1,5 @@
 '''
-Assembler for IKEa
+Assembler for IKEA
 @author Justin Chen
 @since 11/22/2023
 '''
@@ -414,7 +414,7 @@ def generate_binary(instruction_dict:RAMROM_dict, label_lookup:dict, memory_look
         offset = instruction_dict.calculate_offset(label_lookup[instruction_params[0]])
         binary_instruction = f"{opcode}{offset}{EIGHT_ZEROES}{convert_8_bit_bin('X30')}"
 
-    print(binary_instruction)
+    #print(binary_instruction)
     instruction_dict.write_bytes(convert_8_byte_hex(binary_instruction))
 
 # ------------------------- PARSE INPUTS --------------------------
