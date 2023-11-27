@@ -1,6 +1,7 @@
 '''
 Assembler for IKEA
 @author Justin Chen
+I pledge my honor that I have abided by the Stevens Honor System
 @since 11/22/2023
 '''
 
